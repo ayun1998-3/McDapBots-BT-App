@@ -18,6 +18,23 @@ const getControllerId = (gamepadState: GamepadState): ReactNode => {
   )
 }
 
+let lastWriteTime = 0;
+const WRITE_INTERVAL_MS = 10;
+
+async function throttledWrite(characteristic: BluetoothRemoteGATTCharacteristic, data: Uint8Array) {
+  const now = performance.now();
+  const wait = lastWriteTime + WRITE_INTERVAL_MS - now;
+
+  if (wait > 0) {
+    // Wait long enough so writes are ≥10ms apart
+    await new Promise(r => setTimeout(r, wait));
+  }
+
+  lastWriteTime = performance.now();
+  await characteristic.current.writeValueWithoutResponse(data);
+}
+
+
 const GamepadButtons = () => {
   const [gamepadState, setGamepadState] = useState<Gamepad | null | undefined>(
     null,
@@ -27,60 +44,62 @@ const GamepadButtons = () => {
   const bleCharacteristicRef = useRef<BluetoothRemoteGATTCharacteristic | null>(null)
 
   const connectBluetooth = async () => {
+    const CUSTOM_SERVICE = 0xFFE0;
+    const CUSTOM_CHAR    = 0xFFE1;
     const device = await navigator.bluetooth.requestDevice({
         acceptAllDevices: true,
-        optionalServices: ['battery_service'], // Replace with your custom service UUID
+        optionalServices: [CUSTOM_SERVICE], // Replace with your custom service UUID
       })
 
       const server = await device.gatt?.connect()
       if (!server) return
 
-      const service = await server.getPrimaryService('battery_service') // replace UUID
-      const characteristic = await service.getCharacteristic('battery_level') // replace UUID
+      const service = await server.getPrimaryService(CUSTOM_SERVICE)
+      const characteristic = await service.getCharacteristic(CUSTOM_CHAR) 
 
       bleCharacteristicRef.current = characteristic
   }
 
   // PRATIK: EDIT BELOW TO SEND DATA BASED ON GAMEPAD INPUTS
-  const sendBluetoothData = (gamepad: Gamepad) => {
+  const sendBluetoothData = async (gamepad: Gamepad) => {
     if (!bleCharacteristicRef.current) return
 
     let buttonsByte = 0
-    let character = '0' // single data byte sent to bluetooth peripheral
+    let character = 0 // single data byte sent to bluetooth peripheral
 
     // Set character based on left joystick radial position
     if (gamepad.axes[0] > 0.9) { // right
-      character = 'b'
+      character = 'B'
     }
     else if(gamepad.axes[0] < -0.9) { // left
-      character = 'd'
+      character = 'D'
     }
     else if(gamepad.axes[1] > 0.9) { // down
-      character = 'c'
+      character = 'C'
     }
     else if(gamepad.axes[1] < -0.9) { // up
-      character = 'a'
+      character = 'A'
     }
     else {
-      character = '0'
+      character = '\0'
     }
 
-    // Set character based on right joystick radial position
-    if (gamepad.axes[2] > 0.9) { // right
-      character = 'b'
-    }
-    else if(gamepad.axes[2] < -0.9) { // left
-      character = 'd'
-    }
-    else if(gamepad.axes[3] > 0.9) { // down
-      character = 'c'
-    }
-    else if(gamepad.axes[3] < -0.9) { // up
-      character = 'a'
-    }
-    else {
-      character = '0'
-    }
+    // // Set character based on right joystick radial position
+    // if (gamepad.axes[2] > 0.9) { // right
+    //   character = 'b'
+    // }
+    // else if(gamepad.axes[2] < -0.9) { // left
+    //   character = 'd'
+    // }
+    // else if(gamepad.axes[3] > 0.9) { // down
+    //   character = 'c'
+    // }
+    // else if(gamepad.axes[3] < -0.9) { // up
+    //   character = 'a'
+    // }
+    // else {
+    //   character = '0'
+    // }
 
     if (gamepad.buttons[0].pressed) { // button A
       character = 'A'
@@ -97,8 +116,11 @@ const GamepadButtons = () => {
 
     const character_byte = character.charCodeAt(0)
     const data = new Uint8Array([character_byte])
+    
+    console.log('Sending data:', character)
+    // bleCharacteristicRef.current.writeValueWithoutResponse(data)
+    await throttledWrite(bleCharacteristicRef, data);
 
-    bleCharacteristicRef.current.writeValueWithoutResponse(data)
   }
 
 

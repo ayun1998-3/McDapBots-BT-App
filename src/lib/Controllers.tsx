@@ -65,7 +65,7 @@ const GamepadButtons = () => {
     if (!bleCharacteristicRef.current) return
 
     let buttonsByte = 0
-    let character = 0 // single data byte sent to bluetooth peripheral
+    let character = '0' // single data byte sent to bluetooth peripheral
 
     // Set character based on left joystick radial position
     if (gamepad.axes[0] > 0.9) { // right

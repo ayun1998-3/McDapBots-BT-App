@@ -19,7 +19,7 @@ const getControllerId = (gamepadState: GamepadState): ReactNode => {
 }
 
 let lastWriteTime = 0;
-const WRITE_INTERVAL_MS = 10;
+const WRITE_INTERVAL_MS = 5; // Minimum interval between writes in milliseconds
 
 async function throttledWrite(characteristic: BluetoothRemoteGATTCharacteristic, data: Uint8Array) {
   const now = performance.now();
@@ -64,62 +64,53 @@ const GamepadButtons = () => {
   const sendBluetoothData = async (gamepad: Gamepad) => {
     if (!bleCharacteristicRef.current) return
 
-    let buttonsByte = 0
-    let character = '0' // single data byte sent to bluetooth peripheral
+    let directionChar = '\0' // character that encodes direction value
+      let speed = 0x00 // byte that encodes speed value (0-255)
 
-    // Set character based on left joystick radial position
-    if (gamepad.axes[0] > 0.9) { // right
-      character = 'B'
-    }
-    else if(gamepad.axes[0] < -0.9) { // left
-      character = 'D'
-    }
-    else if(gamepad.axes[1] > 0.9) { // down
-      character = 'C'
-    }
-    else if(gamepad.axes[1] < -0.9) { // up
-      character = 'A'
-    }
-    else {
-      character = '\0'
-    }
+      if (gamepad.axes && gamepad.axes[0] && gamepad.axes[1]) {
+        // Set character based on left joystick radial position
+        // gamepad.axes[1] is y axis (positive is down), gamepad.axes[0] is x axis (positive is right)
+        if (gamepad.axes[1] < -0.2) { 
+          if (Math.abs(gamepad.axes[0]) < 0.2) { // forward
+            directionChar = 'A'
+          }
+          else if (gamepad.axes[0] >= 0.2) { // forward-right
+            directionChar = 'E'
+          }
+          else if (gamepad.axes[0] <= -0.2) { // forward-left
+            directionChar = 'F'
+          }
+        }
+        else if (gamepad.axes[1] > 0.2) { 
+          if (Math.abs(gamepad.axes[0]) < 0.2) { // reverse
+            directionChar = 'C'
+          }
+          else if (gamepad.axes[0] >= 0.2) { // reverse-right
+            directionChar = 'G'
+          }
+          else if (gamepad.axes[0] <= -0.2) { // reverse-left
+            directionChar = 'H'
+          }
+        }
+        else if (gamepad.axes[0] > 0.2 && Math.abs(gamepad.axes[1]) < 0.2) { // right
+          directionChar = 'B'
+        }
+        else if (gamepad.axes[0] < -0.2 && Math.abs(gamepad.axes[1]) < 0.2) { // left
+          directionChar = 'D'
+        }
+        else {
+          directionChar = '\0'
+        }
+        // Set speed based on left joystick radial position (using pythagorean theorem)
+        speed = Math.min(255, Math.floor(255 * Math.sqrt(gamepad.axes[0]**2 + gamepad.axes[1]**2)))
 
-    // // Set character based on right joystick radial position
-    // if (gamepad.axes[2] > 0.9) { // right
-    //   character = 'b'
-    // }
-    // else if(gamepad.axes[2] < -0.9) { // left
-    //   character = 'd'
-    // }
-    // else if(gamepad.axes[3] > 0.9) { // down
-    //   character = 'c'
-    // }
-    // else if(gamepad.axes[3] < -0.9) { // up
-    //   character = 'a'
-    // }
-    // else {
-    //   character = '0'
-    // }
-
-    if (gamepad.buttons[0].pressed) { // button A
-      character = 'A'
-    }
-    else if (gamepad.buttons[1].pressed) { // button B
-      character = 'B'
-    }
-    else if (gamepad.buttons[2].pressed) { // button X
-      character = 'X'
-    }
-    else if (gamepad.buttons[3].pressed) { // button Y
-      character = 'Y'
-    } 
-
-    const character_byte = character.charCodeAt(0)
-    const data = new Uint8Array([character_byte])
-    
-    console.log('Sending data:', character)
-    // bleCharacteristicRef.current.writeValueWithoutResponse(data)
-    await throttledWrite(bleCharacteristicRef, data);
+        const character_byte = directionChar.charCodeAt(0)
+        const data = new Uint8Array([character_byte, speed])
+        console.log('Sending data: [%s, %d]', directionChar, speed)
+      
+        // bleCharacteristicRef.current.writeValueWithoutResponse(data)
+        await throttledWrite(bleCharacteristicRef, data)
+      }
 
   }
 
